@@ -84,13 +84,12 @@ impl Map {
         self.map[position.0][position.1] = grid
     }
 
-
     fn robot_try_move(
         &self,
         now_position: Position,
         instruction: Instruction,
     ) -> Option<Vec<BoxInstruction>> {
-        let r1 = self.robot_try_move_inner(now_position, instruction)?;
+        let mut r1 = self.robot_try_move_inner(now_position, instruction)?;
 
         let pair_position = {
             match (self.grid(now_position), instruction) {
@@ -113,9 +112,12 @@ impl Map {
                 pair_position
             );
             let r2 = self.robot_try_move_inner(pair_position, instruction)?;
-            let all = r1.iter().chain(r2.iter()).cloned();
-            let v = all.collect::<Vec<_>>();
-            Some(v)
+            for r in r2 {
+                if !r1.contains(&r) {
+                    r1.push(r);
+                }
+            }
+            Some(r1)
         } else {
             Some(r1)
         }
@@ -136,16 +138,16 @@ impl Map {
         match self.grid(next_position) {
             Grid::Wall => return None,
             Grid::Empty => {
-                println!("try move inner one: {:?}", this_instruction);
-                return Some(vec![this_instruction]);
+                // println!("try move inner one: {:?}", this_instruction);
+                return Some(vec![this_instruction].into_iter().collect());
             }
             Grid::BoxLeft | Grid::BoxRight | Grid::BoxOld => {
                 if let Some(mut child_instructions) =
                     self.robot_try_move(next_position, instruction)
                 {
                     child_instructions.push(this_instruction);
-                    println!("try move inner multi: {:?}", child_instructions);
-                    return Some(child_instructions);
+                    // println!("try move inner multi: {:?}", child_instructions);
+                    return Some(child_instructions.into());
                 }
             }
             Grid::Robot => unreachable!(),
@@ -154,13 +156,12 @@ impl Map {
     }
 
     fn robot_move(&mut self, robot_instruction: Instruction) {
-        self.print();
         println!("robot move: {:?}---------------------", robot_instruction);
         if let Some(box_instructions) = self.robot_try_move(self.robot_position, robot_instruction)
         {
-            box_instructions.iter().for_each(|i| {
-                println!(" box_instructions: {:?}", i);
-            });
+            // box_instructions.iter().for_each(|i| {
+            //     println!(" box_instructions: {:?}", i);
+            // });
             box_instructions.iter().for_each(|box_instruction| {
                 println!(
                     "{box_instruction:?}, now: {}, next: {}",
@@ -173,7 +174,6 @@ impl Map {
                     self.grid(box_instruction.now_position),
                 );
                 self.set_grid(box_instruction.now_position, Grid::Empty);
-                self.print();
             });
 
             self.set_grid(self.robot_position, Grid::Empty);
@@ -193,7 +193,7 @@ impl Map {
         let mut sum = 0;
         for (height, line) in self.map.iter().enumerate() {
             for (width, grid) in line.iter().enumerate() {
-                if matches!(grid, Grid::BoxLeft | Grid::BoxRight) {
+                if matches!(grid, Grid::BoxLeft) {
                     sum += 100 * height + width;
                 }
             }
@@ -202,7 +202,7 @@ impl Map {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Instruction {
     Up,
     Down,
@@ -210,7 +210,7 @@ enum Instruction {
     Right,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct Position(usize, usize);
 
 impl Position {
@@ -224,7 +224,7 @@ impl Position {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct BoxInstruction {
     now_position: Position,
     next_position: Position,
@@ -319,4 +319,8 @@ fn part2(file_name: &str) {
 #[test]
 fn part2_example_large() {
     part2("input.txt.larger");
+}
+#[test]
+fn part2_main() {
+    part2("input.txt");
 }
