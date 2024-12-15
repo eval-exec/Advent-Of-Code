@@ -6,8 +6,23 @@ fn main() {
 enum Grid {
     Wall,
     Empty,
-    Box,
+    BoxOld,
+    BoxLeft,
+    BoxRight,
     Robot,
+}
+
+impl std::fmt::Display for Grid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Grid::Wall => f.write_str("#"),
+            Grid::Empty => f.write_str("."),
+            Grid::BoxOld => f.write_str("O"),
+            Grid::BoxLeft => f.write_str("["),
+            Grid::BoxRight => f.write_str("]"),
+            Grid::Robot => f.write_str("@"),
+        }
+    }
 }
 
 impl From<char> for Grid {
@@ -15,7 +30,9 @@ impl From<char> for Grid {
         match value {
             '#' => Grid::Wall,
             '.' => Grid::Empty,
-            'O' => Grid::Box,
+            'O' => Grid::BoxOld,
+            '[' => Grid::BoxLeft,
+            ']' => Grid::BoxRight,
             '@' => Grid::Robot,
             x => unreachable!("unreachable!!!:{}", x),
         }
@@ -28,11 +45,33 @@ struct Map {
 }
 
 impl Map {
+    fn scale(&mut self) {
+        let line_len = self.map[0].len();
+        for h in 0..self.map.len() {
+            for i in 0..line_len {
+                let dup = self.map[h][i * 2];
+                match dup {
+                    Grid::BoxOld => {
+                        self.map[h][i * 2] = Grid::BoxLeft;
+                        self.map[h].insert(i * 2 + 1, Grid::BoxRight);
+                    }
+                    Grid::Robot => {
+                        self.map[h].insert(i * 2 + 1, Grid::Empty);
+                    }
+                    _ => {
+                        self.map[h].insert(i * 2 + 1, dup);
+                    }
+                }
+            }
+        }
+        self.robot_position.1 *= 2;
+    }
+
     fn print(&self) {
         println!();
         for (i, line) in self.map.iter().enumerate() {
             for (j, grid) in line.iter().enumerate() {
-                print!("{grid:05?}");
+                print!("{grid}");
             }
             println!();
         }
@@ -44,7 +83,45 @@ impl Map {
     fn set_grid(&mut self, position: Position, grid: Grid) {
         self.map[position.0][position.1] = grid
     }
+
+
     fn robot_try_move(
+        &self,
+        now_position: Position,
+        instruction: Instruction,
+    ) -> Option<Vec<BoxInstruction>> {
+        let r1 = self.robot_try_move_inner(now_position, instruction)?;
+
+        let pair_position = {
+            match (self.grid(now_position), instruction) {
+                (Grid::BoxLeft, Instruction::Up | Instruction::Down) => {
+                    Some(now_position.next_position(Instruction::Right))
+                }
+                (Grid::BoxRight, Instruction::Up | Instruction::Down) => {
+                    Some(now_position.next_position(Instruction::Left))
+                }
+                _ => None,
+            }
+        };
+
+        if let Some(pair_position) = pair_position {
+            println!(
+                "{} have pair {}, {:?} have {:?}",
+                self.grid(now_position),
+                self.grid(pair_position),
+                now_position,
+                pair_position
+            );
+            let r2 = self.robot_try_move_inner(pair_position, instruction)?;
+            let all = r1.iter().chain(r2.iter()).cloned();
+            let v = all.collect::<Vec<_>>();
+            Some(v)
+        } else {
+            Some(r1)
+        }
+    }
+
+    fn robot_try_move_inner(
         &self,
         now_position: Position,
         instruction: Instruction,
@@ -55,14 +132,19 @@ impl Map {
             now_position,
             next_position,
         };
+
         match self.grid(next_position) {
             Grid::Wall => return None,
-            Grid::Empty => return Some(vec![this_instruction]),
-            Grid::Box => {
+            Grid::Empty => {
+                println!("try move inner one: {:?}", this_instruction);
+                return Some(vec![this_instruction]);
+            }
+            Grid::BoxLeft | Grid::BoxRight | Grid::BoxOld => {
                 if let Some(mut child_instructions) =
                     self.robot_try_move(next_position, instruction)
                 {
                     child_instructions.push(this_instruction);
+                    println!("try move inner multi: {:?}", child_instructions);
                     return Some(child_instructions);
                 }
             }
@@ -72,13 +154,28 @@ impl Map {
     }
 
     fn robot_move(&mut self, robot_instruction: Instruction) {
+        self.print();
+        println!("robot move: {:?}---------------------", robot_instruction);
         if let Some(box_instructions) = self.robot_try_move(self.robot_position, robot_instruction)
         {
-            box_instructions.iter().for_each(|box_instruction| {
-                assert_eq!(self.grid(box_instruction.next_position), Grid::Empty);
-                self.set_grid(box_instruction.next_position, Grid::Box);
-                self.set_grid(box_instruction.now_position, Grid::Empty);
+            box_instructions.iter().for_each(|i| {
+                println!(" box_instructions: {:?}", i);
             });
+            box_instructions.iter().for_each(|box_instruction| {
+                println!(
+                    "{box_instruction:?}, now: {}, next: {}",
+                    self.grid(box_instruction.now_position),
+                    self.grid(box_instruction.next_position)
+                );
+                assert_eq!(self.grid(box_instruction.next_position), Grid::Empty);
+                self.set_grid(
+                    box_instruction.next_position,
+                    self.grid(box_instruction.now_position),
+                );
+                self.set_grid(box_instruction.now_position, Grid::Empty);
+                self.print();
+            });
+
             self.set_grid(self.robot_position, Grid::Empty);
             let robot_next_position = self.robot_position.next_position(robot_instruction);
             self.set_grid(robot_next_position, Grid::Robot);
@@ -92,66 +189,11 @@ impl Map {
         });
     }
 
-    //fn robot_move(&mut self, instruction: Instruction)  {
-    //     let mut empty_position = self.robot_position;
-    //     let mut next_grid = self.robot_position;
-    //     let mut found_empty = false;
-    //     match instruction {
-    //         Instruction::Left => {
-    //             next_grid.1 -= 1;
-    //             while !matches!(self.map[empty_position.0][empty_position.1], Grid::Wall) {
-    //                 empty_position.1 -= 1;
-    //                 if matches!(self.grid(empty_position), Grid::Empty) {
-    //                     found_empty = true;
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //         Instruction::Up => {
-    //             next_grid.0 -= 1;
-    //             while !matches!(self.map[empty_position.0][empty_position.1], Grid::Wall) {
-    //                 empty_position.0 -= 1;
-    //                 if matches!(self.grid(empty_position), Grid::Empty) {
-    //                     found_empty = true;
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //         Instruction::Down => {
-    //             next_grid.0 += 1;
-    //             while !matches!(self.map[empty_position.0][empty_position.1], Grid::Wall) {
-    //                 empty_position.0 += 1;
-    //                 if matches!(self.grid(empty_position), Grid::Empty) {
-    //                     found_empty = true;
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //         Instruction::Right => {
-    //             next_grid.1 += 1;
-    //             while !matches!(self.map[empty_position.0][empty_position.1], Grid::Wall) {
-    //                 empty_position.1 += 1;
-    //                 if matches!(self.grid(empty_position), Grid::Empty) {
-    //                     found_empty = true;
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     if found_empty {
-    //         self.set_grid(empty_position, Grid::Box);
-    //         self.set_grid(self.robot_position, Grid::Empty);
-    //         self.set_grid(next_grid, Grid::Robot);
-    //         self.robot_position = next_grid;
-    //     }
-    // }
-
     fn sum_gps(&self) -> usize {
         let mut sum = 0;
         for (height, line) in self.map.iter().enumerate() {
             for (width, grid) in line.iter().enumerate() {
-                if matches!(grid, Grid::Box) {
+                if matches!(grid, Grid::BoxLeft | Grid::BoxRight) {
                     sum += 100 * height + width;
                 }
             }
@@ -182,6 +224,7 @@ impl Position {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct BoxInstruction {
     now_position: Position,
     next_position: Position,
@@ -247,17 +290,33 @@ fn part1(file_name: &str) {
 // ok
 // test part1_small ... sum: 2028
 // ok
-#[test]
-fn part1_example() {
-    part1("input.txt.larger");
+// #[test]
+// fn part1_example() {
+//     part1("input.txt.larger");
+// }
+
+// #[test]
+// fn part1_small() {
+//     part1("input.txt.small");
+// }
+
+// #[test]
+// fn part1_main() {
+//     part1("input.txt");
+// }
+
+fn part2(file_name: &str) {
+    let (mut map, instructions) = parse_input(file_name);
+    map.scale();
+    println!("robot position: {:?}", map.robot_position);
+    map.print();
+    println!("monving");
+    map.robot_moves(instructions);
+    let sum = map.sum_gps();
+    println!("sum: {sum}");
 }
 
 #[test]
-fn part1_small() {
-    part1("input.txt.small");
-}
-
-#[test]
-fn part1_main() {
-    part1("input.txt");
+fn part2_example_large() {
+    part2("input.txt.larger");
 }
