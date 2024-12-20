@@ -214,3 +214,13 @@ fn part2() {
     };
     part2_main("input.txt", area);
 }
+
+fn ifconifg() {
+    println!("fjeiwojo")
+    
+}
+
+
+fn () {
+    
+}
