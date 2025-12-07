@@ -10,7 +10,7 @@ struct Instruct {
     steps: u32,
 }
 
-fn solve(instructions: Vec<Instruct>) -> u32 {
+fn part1(instructions: Vec<Instruct>) -> u32 {
     let mut dial = 0;
     let mut position: i32 = 50;
     for instruction in instructions {
